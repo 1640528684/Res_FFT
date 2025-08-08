@@ -1,0 +1,135 @@
+# ------------------------------------------------------------------------
+# Copyright (c) 2022 megvii-model. All Rights Reserved.
+# ------------------------------------------------------------------------
+# Modified from BasicSR (https://github.com/xinntao/BasicSR)
+# Copyright 2018-2020 BasicSR Authors
+# ------------------------------------------------------------------------
+# general settings
+name: v51_fft-GoPro-width64
+model_type: ImageRestorationModel
+scale: 1
+num_gpu: 4
+manual_seed: 10
+
+datasets:
+  train:
+    name: gopro-train
+    type: PairedImageDataset
+    dataroot_gt: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/train/sharp_crops.lmdb
+    dataroot_lq: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/train/blur_crops.lmdb
+    filename_tmpl: '{}'
+    io_backend:
+      type: lmdb
+    gt_size: 256
+    use_flip: true
+    use_rot: true
+
+    # 增强的数据增强策略
+    use_flip: true
+    use_rot: true
+    use_color_jitter: true  # 新增颜色抖动增强
+    use_random_crop: true  # 新增随机裁剪
+
+    # data loader
+    use_shuffle: true
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 8
+    dataset_enlarge_ratio: 1
+    prefetch_mode: ~
+
+
+  val:
+    name: gopro-test
+    type: PairedImageDataset
+    dataroot_gt: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/test/target.lmdb
+    dataroot_lq: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/test/input.lmdb
+    io_backend:
+      type: lmdb
+
+
+network_g:
+  type: v51fftLocal
+  width: 64
+  enc_blk_nums: [1, 1, 1, 28]
+  middle_blk_num: 1
+  dec_blk_nums: [1, 1, 1, 1]
+  fft_block: true  # 启用FFT-ReLU残差块
+  fft_norm: 'backward'  # FFT归一化方式
+
+# path
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+# training settings
+train:
+  optim_g:
+    type: AdamW
+    lr: !!float 1e-3
+    weight_decay: !!float 1e-3
+    betas: [0.9, 0.9]
+    grad_clip:  # 新增梯度裁剪
+      max_norm: 0.5
+      norm_type: 2
+
+  scheduler:
+    type: CosineAnnealingWarmRestarts
+    T_0: 100000  # 首次重启周期
+    T_mult: 1.5   # 周期倍增因子
+    eta_min: !!float 1e-7
+
+  total_iter: 500000  # 增加总迭代次数
+  warmup_iter: 10000  # 增加预热迭代
+
+  # losses
+  pixel_opt:
+    type: PSNRLoss
+    loss_weight: 0.8
+    reduction: mean
+
+  fft_opt:  # 新增FFT频域损失
+    type: FFTLoss
+    loss_weight: 0.2  # FFT损失权重
+    reduction: mean
+    freq_weight: [0.1, 0.3, 0.6]  # 低频/中频/高频权重
+  
+  perceptual_opt:  # 新增感知损失
+    type: PerceptualLoss
+    layer_weights: {"conv5_4": 1.0}  # VGG19 conv5_4层
+    loss_weight: 0.5
+    perceptual_weight: 1.0
+    style_weight: 0.0
+
+# validation settings
+val:
+  val_freq: !!float 1e6
+  save_img: true
+
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: true
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: true
+    lpips:  # 新增LPIPS指标
+      type: calculate_lpips
+      crop_border: 0
+
+# logging settings
+logger:
+  print_freq: 200
+  save_checkpoint_freq: !!float 2e3
+  use_tb_logger: true
+  wandb:
+    project: SFTNet-FFTRes
+    resume_id: ~
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29990
