@@ -8,21 +8,41 @@ import argparse
 import datetime
 import logging
 import math
+import os
 import random
+import sys
 import time
-import torch
-from os import path as osp
+import numpy as np
 
+from os import path as osp
+root_dir = os.path.dirname(os.path.abspath(__file__))  # 获取当前脚本所在目录（basicsr）
+sys.path.append(os.path.dirname(root_dir))  # 将根目录（NAFNet）加入路径
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
+
+import torch
+import torch.distributed as dist
+from torch.utils.data import DataLoader
 from basicsr.data import create_dataloader, create_dataset
 from basicsr.data.data_sampler import EnlargedSampler
 from basicsr.data.prefetch_dataloader import CPUPrefetcher, CUDAPrefetcher
 from basicsr.models import create_model
-from basicsr.utils import (MessageLogger, check_resume, get_env_info,
-                           get_root_logger, get_time_str, init_tb_logger,
-                           init_wandb_logger, make_exp_dirs, mkdir_and_rename,
-                           set_random_seed)
+from basicsr.utils import (MessageLogger, check_resume, get_env_info, get_root_logger, get_time_str, init_tb_logger, init_wandb_logger, make_exp_dirs, mkdir_and_rename, set_random_seed)
 from basicsr.utils.dist_util import get_dist_info, init_dist
 from basicsr.utils.options import dict2str, parse
+import math
+from basicsr.data.transforms import (  # 直接从transforms.py导入
+    PairedRandomCrop,
+    Augment,
+    AdjustSize,
+    Compose,
+    Resize
+)
+import basicsr.data.transforms as transforms
+
+#重新初始化 cuDNN
+torch.backends.cudnn.enabled = True
+torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = False
 
 
 def parse_options(is_train=True):

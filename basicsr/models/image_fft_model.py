@@ -160,6 +160,24 @@ class ImageFftModel(BaseModel):
                 idxes.append({'i': i, 'j': j})
                 j = j + step_j
             i = i + step_i
+        
+        # i = 0
+        # while i < h:
+        #     j = 0
+        #     if i + crop_size_h >= h:
+        #         i = h - crop_size_h
+
+        #     last_j = False
+        #     while j < w:
+        #         if j + crop_size_w >= w:
+        #             j = w - crop_size_w
+        #             last_j = True
+
+        #         parts.append(self.lq[:, :, i//self.scale:(i + crop_size_h)//self.scale, j//self.scale:(j + crop_size_w)//self.scale])
+        #         idxes.append({'i': i, 'j': j})
+        #         j += step_j
+        #     i += step_i
+
 
         self.origin_lq = self.lq
         self.lq = torch.cat(parts, dim=0)
@@ -220,12 +238,22 @@ class ImageFftModel(BaseModel):
             l_fft = self.cri_fft(preds[-1], self.gt)
             l_total += l_fft
             loss_dict['l_fft'] = l_fft
-
+        
+        # Perceptual loss
+        if self.cri_percep:
+            l_percep = self.cri_percep(preds[-1], self.gt)
+            l_total += l_percep
+            loss_dict['l_percep'] = l_percep
+        
         l_total = l_total + 0. * sum(p.sum() for p in self.net_g.parameters())
 
-        l_total = l_total
-
         l_total.backward()
+
+        # l_total = l_total + 0. * sum(p.sum() for p in self.net_g.parameters())
+
+        # l_total = l_total
+
+        # l_total.backward()
 
         ######################################################
 

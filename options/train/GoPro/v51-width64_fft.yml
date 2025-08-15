@@ -15,20 +15,16 @@ datasets:
   train:
     name: gopro-train
     type: PairedImageDataset
-    dataroot_gt: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/train/sharp_crops.lmdb
-    dataroot_lq: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/train/blur_crops.lmdb
+    dataroot_gt: /home/user/NAFNet/datasets/GoPro/test/target.lmdb
+    dataroot_lq: /home/user/NAFNet/datasets/GoPro/test/input.lmdb
     filename_tmpl: '{}'
     io_backend:
       type: lmdb
     gt_size: 256
     use_flip: true
     use_rot: true
-
-    # 增强的数据增强策略
-    use_flip: true
-    use_rot: true
     use_color_jitter: true  # 新增颜色抖动增强
-    use_random_crop: true  # 新增随机裁剪
+    use_random_crop: true   # 新增随机裁剪
 
     # data loader
     use_shuffle: true
@@ -41,8 +37,8 @@ datasets:
   val:
     name: gopro-test
     type: PairedImageDataset
-    dataroot_gt: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/test/target.lmdb
-    dataroot_lq: /data/users/qingluhou/Neural_network/motion_deblur/Datesets/GOPRO_bascisr/test/input.lmdb
+    dataroot_gt: /home/user/NAFNet/datasets/GoPro/test/target.lmdb
+    dataroot_lq: /home/user/NAFNet/datasets/GoPro/test/input.lmdb
     io_backend:
       type: lmdb
 
@@ -103,10 +99,8 @@ train:
 
 # validation settings
 val:
-  val_freq: !!float 1e6
+  val_freq: 5000  #!!float 1e6
   save_img: true
-
-
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
