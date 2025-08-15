@@ -16,8 +16,27 @@ import numpy as np
 import wandb
 
 from os import path as osp
-root_dir = os.path.dirname(os.path.abspath(__file__))  # 获取当前脚本所在目录（basicsr）
-sys.path.append(os.path.dirname(root_dir))  # 将根目录（NAFNet）加入路径
+# root_dir = os.path.dirname(os.path.abspath(__file__))  # 获取当前脚本所在目录（basicsr）
+# sys.path.append(os.path.dirname(root_dir))  # 将根目录（NAFNet）加入路径
+# 增强版路径配置：明确获取项目根目录并添加到搜索路径
+# 1. 获取当前脚本（train.py）的绝对路径
+current_script_path = os.path.abspath(__file__)
+# 2. 获取当前脚本所在目录（basicsr目录）
+basicsr_dir = os.path.dirname(current_script_path)
+# 3. 获取项目根目录（basicsr的上一级目录，即Res_FFT/Res_FFT）
+root_dir = os.path.dirname(basicsr_dir)
+# 4. 强制将根目录添加到Python搜索路径（如果已存在则先移除再添加，确保优先级）
+if root_dir in sys.path:
+    sys.path.remove(root_dir)
+sys.path.insert(0, root_dir)  # 插入到最前面，优先搜索
+
+# 验证路径是否正确（可选，用于调试）
+print(f"当前脚本路径: {current_script_path}")
+print(f"basicsr目录路径: {basicsr_dir}")
+print(f"项目根目录路径: {root_dir}")
+print(f"Python搜索路径: {sys.path[:3]}")  # 打印前3个路径确认
+
+
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
 
 import torch
