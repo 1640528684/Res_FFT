@@ -13,6 +13,7 @@ import random
 import sys
 import time
 import numpy as np
+import wandb
 
 from os import path as osp
 root_dir = os.path.dirname(os.path.abspath(__file__))  # 获取当前脚本所在目录（basicsr）
@@ -107,6 +108,8 @@ def init_loggers(opt):
         assert opt['logger'].get('use_tb_logger') is True, (
             'should turn on tensorboard when using wandb')
         init_wandb_logger(opt)
+        # 将配置文件参数上传到WandB
+        wandb.config.update(opt)
     tb_logger = None
     if opt['logger'].get('use_tb_logger') and 'debug' not in opt['name']:
         # tb_logger = init_tb_logger(log_dir=f'./logs/{opt['name']}') #mkdir logs @CLY
@@ -243,7 +246,7 @@ def main():
         f'Start training from epoch: {start_epoch}, iter: {current_iter}')
     data_time, iter_time = time.time(), time.time()
     start_time = time.time()
-    best_psnr = -36.9
+    best_psnr = -float('inf') #best_psnr = -36.9
     # for epoch in range(start_epoch, total_epochs + 1):
     epoch = start_epoch
     while current_iter <= total_iters:
@@ -262,6 +265,7 @@ def main():
                 current_iter, warmup_iter=opt['train'].get('warmup_iter', -1))
             # training
             model.feed_data(train_data, is_val=False)
+            model.optimize_parameters(current_iter, tb_logger)
 
             result_code = model.optimize_parameters(current_iter, tb_logger)
             # if result_code == -1 and tb_logger:
@@ -276,6 +280,8 @@ def main():
                 log_vars.update(model.get_current_log())
                 # print('msg logger .. ', current_iter)
                 msg_logger(log_vars)
+                 # 手动将训练指标同步到WandB（确保实时性）
+                wandb.log({k: v for k, v in log_vars.items() if k not in ['epoch', 'iter', 'total_iter']}, step=current_iter)
             # 保存最好的loss
             # if model.log_dict['l_pix'] < best_psnr:
             #     psnr = model.log_dict['l_pix']
@@ -292,8 +298,16 @@ def main():
                 rgb2bgr = opt['val'].get('rgb2bgr', True)
                 # wheather use uint8 image to compute metrics
                 use_image = opt['val'].get('use_image', True)
-                model.validation(val_loader, current_iter, tb_logger,
+                val_metrics = model.validation(val_loader, current_iter, tb_logger,
                                  opt['val']['save_img'], rgb2bgr, use_image )
+                # 将验证指标同步到WandB
+                if val_metrics:
+                    wandb.log({f'val_{k}': v for k, v in val_metrics.items()}, step=current_iter)
+                    # 记录最佳PSNR
+                    if val_metrics.get('psnr', -float('inf')) > best_psnr:
+                        best_psnr = val_metrics['psnr']
+                        wandb.log({'best_val_psnr': best_psnr}, step=current_iter)
+                        logger.info(f'Update best PSNR: {best_psnr:.4f} at iter {current_iter}')
                 log_vars = {'epoch': epoch, 'iter': current_iter, 'total_iter': total_iters}
                 log_vars.update({'lrs': model.get_current_learning_rate()})
                 log_vars.update(model.get_current_log())
@@ -318,10 +332,15 @@ def main():
         use_image = opt['val'].get('use_image', True)
         metric = model.validation(val_loader, current_iter, tb_logger,
                          opt['val']['save_img'], rgb2bgr, use_image)
+        if metric:
+            wandb.log({f'final_val_{k}': v for k, v in final_metrics.items()}, step=current_iter)
         # if tb_logger:
         #     print('xxresult! ', opt['name'], ' ', metric)
     if tb_logger:
         tb_logger.close()
+     # 结束WandB运行
+    if opt['rank'] == 0 and wandb.run is not None:
+        wandb.finish()
 
 
 if __name__ == '__main__':

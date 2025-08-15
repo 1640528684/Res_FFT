@@ -122,6 +122,7 @@ logger:
   wandb:
     project: SFTNet-FFTRes
     resume_id: ~
+    notes: "no modify conv version:[FFT Block + RseFFT Block 64]"
 
 # dist training settings
 dist_params:
