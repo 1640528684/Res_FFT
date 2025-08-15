@@ -44,7 +44,7 @@ datasets:
 
 
 network_g:
-  type: v51fftLocal
+  type: v51_fft_arch #v51fftLocal
   width: 64
   enc_blk_nums: [1, 1, 1, 28]
   middle_blk_num: 1
