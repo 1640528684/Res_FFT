@@ -31,11 +31,11 @@ from basicsr.utils.dist_util import get_dist_info, init_dist
 from basicsr.utils.options import dict2str, parse
 import math
 from basicsr.data.transforms import (  # 直接从transforms.py导入
-    PairedRandomCrop,
-    Augment,
-    AdjustSize,
-    Compose,
-    Resize
+    paired_random_crop,
+    paired_random_crop_hw,
+    augment,
+    mod_crop,
+    img_rotate,
 )
 import basicsr.data.transforms as transforms
 
