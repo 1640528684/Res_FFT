@@ -36,51 +36,58 @@ class MessageLogger():
 
     @master_only
     def __call__(self, log_vars):
-        """Log training information."""
-        # 安全获取值
-        total_iter = log_vars.get('iter', log_vars.get('total_iter'))
-        lr = log_vars.get('lr', log_vars.get('learning_rate'))
-    
-        # 构建日志消息
-        log_items = []
-        if total_iter is not None:
-            log_items.append(f'iter: {int(total_iter):,}')
-        if lr is not None:
-            log_items.append(f'lr: {float(lr):.3e}')
-    
-        # 添加其他指标（防御性处理）
+        """Format logging message.
+
+        Args:
+            log_vars (dict): It contains the following keys:
+                epoch (int): Epoch number.
+                iter (int): Current iter.
+                lrs (list): List for learning rates.
+
+                time (float): Iter time.
+                data_time (float): Data time for each iter.
+        """
+        # epoch, iter, learning rates
+        epoch = log_vars.pop('epoch')
+        current_iter = log_vars.pop('iter')
+        total_iter = log_vars.pop('total_iter')
+        lrs = log_vars.pop('lrs')
+
+        message = (f'[{self.exp_name[:5]}..][epoch:{epoch:3d}, '
+                   f'iter:{current_iter:8,d}, lr:(')
+        for v in lrs:
+            message += f'{v:.3e},'
+        message += ')] '
+
+        # time and estimated time
+        if 'time' in log_vars.keys():
+            iter_time = log_vars.pop('time')
+            data_time = log_vars.pop('data_time')
+
+            total_time = time.time() - self.start_time
+            time_sec_avg = total_time / (current_iter - self.start_iter + 1)
+            eta_sec = time_sec_avg * (self.max_iters - current_iter - 1)
+            eta_str = str(datetime.timedelta(seconds=int(eta_sec)))
+            message += f'[eta: {eta_str}, '
+            message += f'time (datas): {iter_time:.3f} ({data_time:.3f})] '
+
+        # other items, especially losses
         for k, v in log_vars.items():
-            if k in ['iter', 'total_iter', 'lr', 'learning_rate']:
-                continue
-            try:
-                if isinstance(v, (float, int)):
-                    log_items.append(f'{k}: {v:.4f}')
-                elif isinstance(v, (list, tuple)):
-                    log_items.append(f'{k}: {np.mean(v):.4f}')
-                elif hasattr(v, 'item'):
-                    log_items.append(f'{k}: {v.item():.4f}')
+            message += f'{k}: {v:.4e} '
+            # tensorboard logger
+            if self.use_tb_logger and 'debug' not in self.exp_name:
+                normed_step = 10000 * (current_iter / total_iter)
+                normed_step = int(normed_step)
+
+                if k.startswith('l_'):
+                    self.tb_logger.add_scalar(f'losses/{k}', v, normed_step)
+                elif k.startswith('m_'):
+                    self.tb_logger.add_scalar(f'metrics/{k}', v, normed_step)
                 else:
-                    log_items.append(f'{k}: {v}')
-            except Exception as e:
-                self.logger.warning(f'Log format error for {k}: {str(e)}')
-    
-        self.logger.info(' | '.join(log_items))
-    
-        # TensorBoard记录
-        if self.tb_logger and total_iter is not None:
-            for k, v in log_vars.items():
-                try:
-                    if isinstance(v, (float, int)):
-                        self.tb_logger.add_scalar(f'train/{k}', float(v), total_iter)
-                    elif isinstance(v, (list, tuple)) and len(v) > 0:
-                        self.tb_logger.add_scalar(f'train/{k}', float(np.mean(v)), total_iter)
-                    elif hasattr(v, 'item'):
-                        self.tb_logger.add_scalar(f'train/{k}', v.item(), total_iter)
-                except Exception as e:
-                    self.logger.warning(f'TensorBoard log failed for {k}: {str(e)}')
-    def reset(self):
-        """Reset the logger."""
-        self.logger.handlers = []
+                    assert 1 == 0
+                # else:
+                #     self.tb_logger.add_scalar(k, v, current_iter)
+        self.logger.info(message)
 
 
 @master_only
@@ -112,10 +119,7 @@ def init_wandb_logger(opt):
         name=opt['name'],
         config=opt,
         project=project,
-        sync_tensorboard=True,
-        settings=wandb.Settings(init_timeout=180)
-        )
-        
+        sync_tensorboard=True)
 
     logger.info(f'Use wandb logger with id={wandb_id}; project={project}.')
 
