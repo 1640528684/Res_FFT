@@ -119,7 +119,8 @@ def init_wandb_logger(opt):
         name=opt['name'],
         config=opt,
         project=project,
-        sync_tensorboard=True)
+        sync_tensorboard=True,
+        settings=wandb.Settings(init_timeout=600))
 
     logger.info(f'Use wandb logger with id={wandb_id}; project={project}.')
 
