@@ -119,10 +119,10 @@ logger:
   print_freq: 200
   save_checkpoint_freq: !!float 2e3
   use_tb_logger: true
-  wandb:
-    project: SFTNet-FFTRes
-    resume_id: ~
-    notes: "no modify conv version:[FFT Block + RseFFT Block 64]"
+  # wandb:
+  #   project: SFTNet-FFTRes
+  #   resume_id: ~
+  #   notes: "no modify conv version:[FFT Block + RseFFT Block 64]"
 
 # dist training settings
 dist_params:
