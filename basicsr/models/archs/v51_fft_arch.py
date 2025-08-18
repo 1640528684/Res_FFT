@@ -181,9 +181,10 @@ class LayerNorm(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, dim, ffn_expansion_factor=1, bias=False, LayerNorm_type='WithBias', att=False):
+    def __init__(self, dim, ffn_expansion_factor=1, bias=False, LayerNorm_type='WithBias', att=False,fft_block=False, fft_norm='backward'):
         super(TransformerBlock, self).__init__()
-        self.naf = NAFBlock(dim)
+        
+        self.naf = NAFBlock(dim,fft_block=fft_block, fft_norm=fft_norm)
         self.norm2 = LayerNorm(dim, LayerNorm_type)
         self.ffn = DFFN(dim, ffn_expansion_factor, bias)
 
@@ -196,7 +197,7 @@ class TransformerBlock(nn.Module):
 
 
 class NAFBlock(nn.Module):
-    def __init__(self, c, DW_Expand=2, FFN_Expand=2, drop_out_rate=0.):
+    def __init__(self, c, DW_Expand=2, FFN_Expand=2, drop_out_rate=0.,fft_block=False, fft_norm='backward'):
         super().__init__()
         dw_channel = c * DW_Expand
         self.conv1 = nn.Conv2d(in_channels=c, out_channels=dw_channel, kernel_size=1, padding=0, stride=1, groups=1,
@@ -230,7 +231,9 @@ class NAFBlock(nn.Module):
         self.gamma = nn.Parameter(torch.zeros((1, c, 1, 1)), requires_grad=True)
         
         # 新增Res FFT-ReLU Block
-        self.fft_block = ResBlock_do_fft_bench(c, norm='backward')
+        # 根据参数条件初始化FFT模块（使用传递的fft_norm）
+        self.fft_block_enabled = fft_block  # 保存启用标志
+        self.fft_block = ResBlock_do_fft_bench(c, norm=fft_norm) if fft_block else None
 
     def forward(self, inp):
         x = inp
@@ -245,8 +248,13 @@ class NAFBlock(nn.Module):
         # ============== 关键修改 ==============
         # 在残差路径上插入FFT-ReLU Block
         residual = inp + x * self.beta
-        fft_out = self.fft_block(residual)
-        y = residual + fft_out
+        # fft_out = self.fft_block(residual)
+        # y = residual + fft_out
+        if self.fft_block_enabled and self.fft_block is not None:
+            fft_out = self.fft_block(residual)
+            y = residual + fft_out
+        else:
+            y = residual  # 不启用FFT时直接传递残差
         # =====================================
         
         # 后续处理
@@ -263,7 +271,7 @@ class NAFBlock(nn.Module):
 
 class NAFNet(nn.Module):
 
-    def __init__(self, img_channel=3, width=16, middle_blk_num=1, enc_blk_nums=[], dec_blk_nums=[]):
+    def __init__(self, img_channel=3, width=16, middle_blk_num=1, enc_blk_nums=[], dec_blk_nums=[],fft_block=False,fft_norm='backward'):
         super().__init__()
 
         self.intro = nn.Conv2d(in_channels=img_channel, out_channels=width, kernel_size=3, padding=1, stride=1,
@@ -272,6 +280,8 @@ class NAFNet(nn.Module):
         self.ending = nn.Conv2d(in_channels=width, out_channels=img_channel, kernel_size=3, padding=1, stride=1,
                                 groups=1,
                                 bias=True)
+        self.fft_block = fft_block
+        self.fft_norm = fft_norm
 
         self.encoders = nn.ModuleList()
         self.decoders = nn.ModuleList()
@@ -283,7 +293,7 @@ class NAFNet(nn.Module):
         for num in enc_blk_nums:
             self.encoders.append(
                 nn.Sequential(
-                    *[TransformerBlock(chan) for _ in range(num)]
+                    *[TransformerBlock(chan,fft_block=fft_block,fft_norm=fft_norm) for _ in range(num)]
                 )
             )
             self.downs.append(
@@ -293,7 +303,7 @@ class NAFNet(nn.Module):
 
         self.middle_blks = \
             nn.Sequential(
-                *[TransformerBlock(chan) for _ in range(middle_blk_num)]
+                *[TransformerBlock(chan,fft_block=fft_block,fft_norm=fft_norm) for _ in range(middle_blk_num)]
             )
 
         for num in dec_blk_nums:
@@ -306,7 +316,7 @@ class NAFNet(nn.Module):
             chan = chan // 2
             self.decoders.append(
                 nn.Sequential(
-                    *[TransformerBlock(chan) for _ in range(num)]
+                    *[TransformerBlock(chan,fft_block=fft_block,fft_norm=fft_norm) for _ in range(num)]
                 )
             )
 
