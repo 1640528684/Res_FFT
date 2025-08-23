@@ -73,7 +73,7 @@ train:
   scheduler:
     type: CosineAnnealingWarmRestarts
     T_0: 100000  # 首次重启周期
-    T_mult: 1.5   # 周期倍增因子
+    T_mult: 2   # 周期倍增因子
     eta_min: !!float 1e-7
 
   total_iter: 500000  # 增加总迭代次数
