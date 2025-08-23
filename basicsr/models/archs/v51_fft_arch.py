@@ -21,6 +21,7 @@ from basicsr.models.archs.local_arch import Local_Base
 from einops import rearrange
 from .layers import *
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint  # 用于梯度检查点
 
 class SimpleGate(nn.Module):
     def __init__(self, dim):
@@ -36,39 +37,80 @@ class SimpleGate2(nn.Module):
         x1, x2 = x.chunk(2, dim=1)
         return x1 * x2
 # 新增FFT-ReLU块实现
-class ResBlock_do_fft_bench(nn.Module):
-    def __init__(self, out_channel, norm='backward'):
-        super(ResBlock_do_fft_bench, self).__init__()
-        self.main = nn.Sequential(
-            BasicConv(out_channel, out_channel, kernel_size=3, stride=1, relu=True),
-            BasicConv(out_channel, out_channel, kernel_size=3, stride=1, relu=False)
-        )
-        self.main_fft = nn.Sequential(
-            BasicConv(out_channel*2, out_channel*2, kernel_size=1, stride=1, relu=True),
-            BasicConv(out_channel*2, out_channel*2, kernel_size=1, stride=1, relu=False)
-        )
-        self.dim = out_channel
+# class ResBlock_do_fft_bench(nn.Module):
+#     def __init__(self, out_channel, norm='backward'):
+#         super(ResBlock_do_fft_bench, self).__init__()
+#         self.main = nn.Sequential(
+#             BasicConv(out_channel, out_channel, kernel_size=3, stride=1, relu=True),
+#             BasicConv(out_channel, out_channel, kernel_size=3, stride=1, relu=False)
+#         )
+#         self.main_fft = nn.Sequential(
+#             BasicConv(out_channel*2, out_channel*2, kernel_size=1, stride=1, relu=True),
+#             BasicConv(out_channel*2, out_channel*2, kernel_size=1, stride=1, relu=False)
+#         )
+#         self.dim = out_channel
+#         self.norm = norm
+        
+#     def forward(self, x):
+#         _, _, H, W = x.shape
+#         dim = 1
+        
+#         # FFT处理分支
+#         y_fft = torch.fft.rfft2(x, norm=self.norm)
+#         y_imag = y_fft.imag
+#         y_real = y_fft.real
+#         y_f = torch.cat([y_real, y_imag], dim=dim)
+#         y_f = self.main_fft(y_f)
+#         y_real, y_imag = torch.chunk(y_f, 2, dim=dim)
+#         y_fft = torch.complex(y_real, y_imag)
+#         y_fft = torch.fft.irfft2(y_fft, s=(H, W), norm=self.norm)
+        
+#         # 主处理分支
+#         y_main = self.main(x)
+        
+#         # 残差连接
+#         return y_main + x + y_fft
+class FFTBlock(nn.Module):
+    def __init__(self, in_channels, mid_channels=None, norm='backward'):
+        super().__init__()
         self.norm = norm
-        
+        # 压缩通道数（默认压缩为原通道的1/2，可根据情况调整）
+        self.mid_channels = mid_channels if mid_channels is not None else max(1, in_channels // 2)
+        self.conv_compress = nn.Conv2d(in_channels, self.mid_channels, kernel_size=1, bias=False)
+        self.conv_restore = nn.Conv2d(self.mid_channels, in_channels, kernel_size=1, bias=False)
+        # FFT处理后的特征变换
+        self.conv_fft = nn.Conv2d(self.mid_channels * 2, self.mid_channels, kernel_size=3, padding=1, bias=False)
+        self.act = nn.LeakyReLU(0.1, inplace=True)
+
     def forward(self, x):
-        _, _, H, W = x.shape
-        dim = 1
+        # 动态获取输入尺寸（避免固定尺寸导致的内存浪费）
+        B, C, H, W = x.shape
         
-        # FFT处理分支
-        y_fft = torch.fft.rfft2(x, norm=self.norm)
-        y_imag = y_fft.imag
-        y_real = y_fft.real
-        y_f = torch.cat([y_real, y_imag], dim=dim)
-        y_f = self.main_fft(y_f)
-        y_real, y_imag = torch.chunk(y_f, 2, dim=dim)
-        y_fft = torch.complex(y_real, y_imag)
-        y_fft = torch.fft.irfft2(y_fft, s=(H, W), norm=self.norm)
+        # 通道压缩：减少FFT处理的数据量
+        x_compress = self.conv_compress(x)  # [B, mid_C, H, W]
         
-        # 主处理分支
-        y_main = self.main(x)
+        # 用checkpoint包装FFT核心操作（用计算时间换内存）
+        fft_processed = checkpoint(self._fft_core, x_compress, H, W)
         
-        # 残差连接
-        return y_main + x + y_fft
+        # 恢复通道数并残差连接
+        x_fft = self.conv_restore(fft_processed)
+        return x + x_fft  # 残差连接
+
+    def _fft_core(self, x_compress, H, W):
+        # FFT变换（仅保留必要中间变量）
+        x_fft = torch.fft.rfft2(x_compress, norm=self.norm)  # [B, mid_C, H, W//2+1] (复数)
+        # 将复数分解为实部和虚部（合并为通道维度）
+        x_fft_real = x_fft.real  # [B, mid_C, H, W//2+1]
+        x_fft_imag = x_fft.imag  # [B, mid_C, H, W//2+1]
+        x_fft = torch.cat([x_fft_real, x_fft_imag], dim=1)  # [B, 2*mid_C, H, W//2+1]
+        
+        # 特征处理（缩小尺寸后计算，减少内存）
+        x_fft = self.act(self.conv_fft(x_fft))  # [B, mid_C, H, W//2+1]
+        
+        # 逆FFT变换（使用动态尺寸）
+        x_fft = torch.complex(x_fft, torch.zeros_like(x_fft))  # 重构复数
+        x_ifft = torch.fft.irfft2(x_fft, s=(H, W), norm=self.norm)  # [B, mid_C, H, W]
+        return x_ifft
 
 class BasicConv(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size, stride, 
@@ -233,7 +275,9 @@ class NAFBlock(nn.Module):
         # 新增Res FFT-ReLU Block
         # 根据参数条件初始化FFT模块（使用传递的fft_norm）
         self.fft_block_enabled = fft_block  # 保存启用标志
-        self.fft_block = ResBlock_do_fft_bench(c, norm=fft_norm) if fft_block else None
+        # self.fft_block = ResBlock_do_fft_bench(c, norm=fft_norm) if fft_block else None
+        self.fft_block = FFTBlock(c, norm=fft_norm) if fft_block else None
+        
 
     def forward(self, inp):
         x = inp
@@ -247,15 +291,26 @@ class NAFBlock(nn.Module):
         
         # ============== 关键修改 ==============
         # 在残差路径上插入FFT-ReLU Block
-        residual = inp + x * self.beta
+        # residual = inp + x * self.beta
         # fft_out = self.fft_block(residual)
         # y = residual + fft_out
+        # if self.fft_block_enabled and self.fft_block is not None:
+        #     fft_out = self.fft_block(residual)
+        #     y = residual + fft_out
+        # else:
+        #     y = residual  # 不启用FFT时直接传递残差
+        # =====================================
+        # FFT模块处理（保留开关逻辑，新增内存优化）
+        residual = inp + x * self.beta
         if self.fft_block_enabled and self.fft_block is not None:
             fft_out = self.fft_block(residual)
             y = residual + fft_out
+            # 内存优化：释放临时变量
+            del fft_out
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()  # 清理CUDA缓存
         else:
             y = residual  # 不启用FFT时直接传递残差
-        # =====================================
         
         # 后续处理
         y = self.norm2(y)
