@@ -6,7 +6,7 @@
 # ------------------------------------------------------------------------
 # general settings
 name: v51_fft-GoPro-width64
-model_type: ImageRestorationModel
+model_type: ImageFftModel #ImageRestorationModel
 scale: 1
 num_gpu: 4
 manual_seed: 10
