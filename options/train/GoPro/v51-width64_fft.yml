@@ -90,12 +90,7 @@ train:
     reduction: mean
     freq_weight: [0.1, 0.3, 0.6]  # 低频/中频/高频权重
   
-  # perceptual_opt:  # 新增感知损失
-  #   type: PerceptualLoss
-  #   layer_weights: {"conv5_4": 1.0}  # VGG19 conv5_4层
-  #   loss_weight: 0.5
-  #   perceptual_weight: 1.0
-  #   style_weight: 0.0
+
 
 # validation settings
 val:
