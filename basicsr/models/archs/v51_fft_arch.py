@@ -90,26 +90,27 @@ class FFTBlock(nn.Module):
         x_compress = self.conv_compress(x)  # [B, mid_C, H, W]
         
         # 用checkpoint包装FFT核心操作（用计算时间换内存）
-        fft_processed = checkpoint(self._fft_core, x_compress, H, W)
+        fft_processed = checkpoint(self._fft_core, x_compress, H, W,self.norm)
         
         # 恢复通道数并残差连接
         x_fft = self.conv_restore(fft_processed)
         return x + x_fft  # 残差连接
-
-    def _fft_core(self, x_compress, H, W):
+    @staticmethod
+    def _fft_core( x_compress, H, W,norm):
         # FFT变换（仅保留必要中间变量）
-        x_fft = torch.fft.rfft2(x_compress, norm=self.norm)  # [B, mid_C, H, W//2+1] (复数)
+        x_fft = torch.fft.rfft2(x_compress, norm=norm)  # [B, mid_C, H, W//2+1] (复数)
         # 将复数分解为实部和虚部（合并为通道维度）
         x_fft_real = x_fft.real  # [B, mid_C, H, W//2+1]
         x_fft_imag = x_fft.imag  # [B, mid_C, H, W//2+1]
         x_fft = torch.cat([x_fft_real, x_fft_imag], dim=1)  # [B, 2*mid_C, H, W//2+1]
         
         # 特征处理（缩小尺寸后计算，减少内存）
-        x_fft = self.act(self.conv_fft(x_fft))  # [B, mid_C, H, W//2+1]
-        
+        # x_fft = self.act(self.conv_fft(x_fft))  # [B, mid_C, H, W//2+1]
+        x_fft = F.leaky_relu(x_fft, 0.1, inplace=True)  # 替换self.act，避免依赖self
+        x_fft = nn.Conv2d(x_fft.shape[1], x_fft.shape[1]//2, kernel_size=3, padding=1, bias=False).to(x_fft.device)(x_fft)
         # 逆FFT变换（使用动态尺寸）
         x_fft = torch.complex(x_fft, torch.zeros_like(x_fft))  # 重构复数
-        x_ifft = torch.fft.irfft2(x_fft, s=(H, W), norm=self.norm)  # [B, mid_C, H, W]
+        x_ifft = torch.fft.irfft2(x_fft, s=(H, W), norm=norm)  # [B, mid_C, H, W]
         return x_ifft
 
 class BasicConv(nn.Module):
@@ -153,9 +154,15 @@ class DFFN(nn.Module):
         x = self.project_in(x)
         x_patch = rearrange(x, 'b c (h patch1) (w patch2) -> b c h w patch1 patch2', patch1=self.patch_size,
                             patch2=self.patch_size)
-        x_patch_fft = torch.fft.rfft2(x_patch.float())
-        x_patch_fft = x_patch_fft * self.fft
-        x_patch = torch.fft.irfft2(x_patch_fft, s=(self.patch_size, self.patch_size))
+        # x_patch_fft = torch.fft.rfft2(x_patch.float())
+        # x_patch_fft = x_patch_fft * self.fft
+        # x_patch = torch.fft.irfft2(x_patch_fft, s=(self.patch_size, self.patch_size))
+        # 关键：用checkpoint包装分块FFT核心计算
+        x_patch = checkpoint(
+            self._fftn_core,  # 待包装的核心函数
+            x_patch,          # 核心函数参数1：分块后的特征
+            self.fft          # 核心函数参数2：FFT权重参数（避免依赖self）
+        )
         x = rearrange(x_patch, 'b c h w patch1 patch2 -> b c (h patch1) (w patch2)', patch1=self.patch_size,
                       patch2=self.patch_size)
         x1, x2 = self.dwconv(x).chunk(2, dim=1)
@@ -163,6 +170,16 @@ class DFFN(nn.Module):
         x = F.gelu(x1) * x2
         x = self.project_out(x)
         return x
+    # 新增的静态方法：独立封装FFT核心计算（替换原forward中对应的逻辑）
+    @staticmethod
+    def _fftn_core(x_patch, fft_weight):
+        # 分块FFT变换（复数张量，显存占用高）
+        x_patch_fft = torch.fft.rfft2(x_patch.float())
+        # 应用FFT权重（参数从外部传入，不依赖self）
+        x_patch_fft = x_patch_fft * fft_weight
+        # 逆FFT变换（恢复分块空间维度）
+        x_patch = torch.fft.irfft2(x_patch_fft, s=(x_patch.shape[-2], x_patch.shape[-1]))
+        return x_patch
 
 
 def to_3d(x):
@@ -232,7 +249,11 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x):
         inp = x
-        x = self.naf(x)
+        # x = self.naf(x)
+        x = checkpoint(
+            self.naf.forward,  # NAFBlock的forward方法
+            x                  # NAFBlock的输入（仅依赖输入x，无其他参数）
+        )
         x = x + self.ffn(self.norm2(x))
 
         return x

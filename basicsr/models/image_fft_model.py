@@ -272,7 +272,8 @@ class ImageFftModel(BaseModel):
         with torch.no_grad():
             n = len(self.lq)
             outs = []
-            m = self.opt['val'].get('max_minibatch', n)
+            # m = self.opt['val'].get('max_minibatch', n)
+            m = self.opt['val'].get('max_minibatch', min(4, n))
             i = 0
             while i < n:
                 j = i + m
@@ -287,6 +288,11 @@ class ImageFftModel(BaseModel):
                 if isinstance(pred, list):
                     pred = pred[-1]
                 outs.append(pred.detach().cpu())
+                
+                # 显式清理内存
+                del pred, in_tensor
+                torch.cuda.empty_cache()
+                
                 i = j
 
             self.output = torch.cat(outs, dim=0)
