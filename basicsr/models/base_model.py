@@ -14,6 +14,8 @@ from torch.nn.parallel import DataParallel, DistributedDataParallel
 from basicsr.models import lr_scheduler as lr_scheduler
 from basicsr.utils.dist_util import master_only
 
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+
 logger = logging.getLogger('basicsr')
 
 
@@ -99,6 +101,11 @@ class BaseModel():
             for optimizer in self.optimizers:
                 self.schedulers.append(
                     torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, **train_opt['scheduler']))
+        # 添加对CosineAnnealingWarmRestarts的支持
+        elif scheduler_type == 'CosineAnnealingWarmRestarts':
+            for optimizer in self.optimizers:
+                self.schedulers.append(
+                    CosineAnnealingWarmRestarts(optimizer,** train_opt['scheduler']))
         elif scheduler_type == 'LinearLR':
             for optimizer in self.optimizers:
                 self.schedulers.append(
