@@ -96,22 +96,42 @@ class FFTBlock(nn.Module):
         x_fft = self.conv_restore(fft_processed)
         return x + x_fft  # 残差连接
     @staticmethod
-    def _fft_core( x_compress, H, W,norm):
+    def _fft_core(self,x_compress, H, W,norm):
+        
+        # 保存原始数据类型（可能是float16）
+        orig_dtype = x_compress.dtype
+        # 强制将输入转换为float32，因为torch.fft.rfft2不支持float16
+        x_compress = x_compress.to(dtype=torch.float32)
         # FFT变换（仅保留必要中间变量）
         x_fft = torch.fft.rfft2(x_compress, norm=norm)  # [B, mid_C, H, W//2+1] (复数)
         # 将复数分解为实部和虚部（合并为通道维度）
         x_fft_real = x_fft.real  # [B, mid_C, H, W//2+1]
         x_fft_imag = x_fft.imag  # [B, mid_C, H, W//2+1]
-        x_fft = torch.cat([x_fft_real, x_fft_imag], dim=1)  # [B, 2*mid_C, H, W//2+1]
+        # x_fft = torch.cat([x_fft_real, x_fft_imag], dim=1)  # [B, 2*mid_C, H, W//2+1]
+        x_fft_stack = torch.cat([x_fft_real, x_fft_imag], dim=1)  # [B, 2*mid_C, H, W//2+1]
         
-        # 特征处理（缩小尺寸后计算，减少内存）
-        # x_fft = self.act(self.conv_fft(x_fft))  # [B, mid_C, H, W//2+1]
-        x_fft = F.leaky_relu(x_fft, 0.1, inplace=True)  # 替换self.act，避免依赖self
-        x_fft = nn.Conv2d(x_fft.shape[1], x_fft.shape[1]//2, kernel_size=3, padding=1, bias=False).to(x_fft.device)(x_fft)
-        # 逆FFT变换（使用动态尺寸）
-        x_fft = torch.complex(x_fft, torch.zeros_like(x_fft))  # 重构复数
-        x_ifft = torch.fft.irfft2(x_fft, s=(H, W), norm=norm)  # [B, mid_C, H, W]
+        # 通过1x1卷积处理频域特征（保持float32）
+        x_fft_processed = self.conv_fft(x_fft_stack)  # [B, 2*mid_C, H, W//2+1]
+        mid_C = x_fft_processed.shape[1] // 2
+        x_fft_real_processed = x_fft_processed[:, :mid_C, ...]
+        x_fft_imag_processed = x_fft_processed[:, mid_C:, ...]
+        
+        # 合并实部和虚部，重建复数张量（float32）
+        x_fft_processed = torch.complex(x_fft_real_processed, x_fft_imag_processed)
+        # 执行逆FFT（float32支持）
+        x_ifft = torch.fft.irfft2(x_fft_processed, s=(H, W), norm=norm)  # [B, mid_C, H, W]
+        # 将结果转换回原始数据类型（如float16），保证与网络其他部分精度一致
+        x_ifft = x_ifft.to(dtype=orig_dtype)
         return x_ifft
+    
+        # # 特征处理（缩小尺寸后计算，减少内存）
+        # # x_fft = self.act(self.conv_fft(x_fft))  # [B, mid_C, H, W//2+1]
+        # x_fft = F.leaky_relu(x_fft, 0.1, inplace=True)  # 替换self.act，避免依赖self
+        # x_fft = nn.Conv2d(x_fft.shape[1], x_fft.shape[1]//2, kernel_size=3, padding=1, bias=False).to(x_fft.device)(x_fft)
+        # # 逆FFT变换（使用动态尺寸）
+        # x_fft = torch.complex(x_fft, torch.zeros_like(x_fft))  # 重构复数
+        # x_ifft = torch.fft.irfft2(x_fft, s=(H, W), norm=norm)  # [B, mid_C, H, W]
+        # return x_ifft
 
 class BasicConv(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size, stride, 
