@@ -95,8 +95,8 @@ class FFTBlock(nn.Module):
         # 恢复通道数并残差连接
         x_fft = self.conv_restore(fft_processed)
         return x + x_fft  # 残差连接
-    @staticmethod
-    def _fft_core(x_compress, H, W,norm):
+    #@staticmethod
+    def _fft_core(self,x_compress, H, W,norm):
         
         # 保存原始数据类型（可能是float16）
         orig_dtype = x_compress.dtype
@@ -111,7 +111,7 @@ class FFTBlock(nn.Module):
         x_fft_stack = torch.cat([x_fft_real, x_fft_imag], dim=1)  # [B, 2*mid_C, H, W//2+1]
         
         # 通过1x1卷积处理频域特征（保持float32）
-        x_fft_processed = FFTBlock.conv_fft(x_fft_stack)  # [B, 2*mid_C, H, W//2+1]
+        x_fft_processed = self.conv_fft(x_fft_stack)  # [B, 2*mid_C, H, W//2+1]
         mid_C = x_fft_processed.shape[1] // 2
         x_fft_real_processed = x_fft_processed[:, :mid_C, ...]
         x_fft_imag_processed = x_fft_processed[:, mid_C:, ...]
