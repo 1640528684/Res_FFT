@@ -211,15 +211,23 @@ class ImageFftModel(BaseModel):
 
     def optimize_parameters(self, current_iter, tb_logger):
         self.optimizer_g.zero_grad()
+        
+        scaler = torch.cuda.amp.GradScaler()  # 初始化GradScaler
 
-        if self.opt['train'].get('mixup', False):
-            self.mixup_aug()
-
-        preds = self.net_g(self.lq)
-        if not isinstance(preds, list):
-            preds = [preds]
-
-        self.output = preds[-1]
+        # if self.opt['train'].get('mixup', False):
+        #     self.mixup_aug()
+        # preds = self.net_g(self.lq)
+        # if not isinstance(preds, list):
+        #     preds = [preds]
+        # self.output = preds[-1]
+        with torch.cuda.amp.autocast():  # 启用自动混合精度
+            if self.opt['train'].get('mixup', False):
+                self.mixup_aug()
+            preds = self.net_g(self.lq)
+            if not isinstance(preds, list):
+                preds = [preds]
+            self.output = preds[-1]
+        
 
         l_total = 0
         loss_dict = OrderedDict()
@@ -247,7 +255,9 @@ class ImageFftModel(BaseModel):
         
         l_total = l_total + 0. * sum(p.sum() for p in self.net_g.parameters())
 
-        l_total.backward()
+        #l_total.backward()
+        # 混合精度反向传播
+        scaler.scale(l_total).backward()
 
         # l_total = l_total + 0. * sum(p.sum() for p in self.net_g.parameters())
 
@@ -262,8 +272,12 @@ class ImageFftModel(BaseModel):
             clip_config = self.opt['train'].get('grad_clip', {})
             max_norm = clip_config.get('max_norm', 0.01)
             norm_type = clip_config.get('norm_type', 2)
+            scaler.unscale_(self.optimizer_g)  #  unscaling梯度用于裁剪
             torch.nn.utils.clip_grad_norm_(self.net_g.parameters(), max_norm, norm_type=norm_type)
-        self.optimizer_g.step()
+        #self.optimizer_g.step()
+        # 更新优化器和scaler
+        scaler.step(self.optimizer_g)
+        scaler.update()
 
         self.log_dict = self.reduce_loss_dict(loss_dict)
 

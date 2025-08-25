@@ -20,7 +20,7 @@ datasets:
     filename_tmpl: '{}'
     io_backend:
       type: lmdb
-    gt_size: 256
+    gt_size: 128 #256
     use_flip: true
     use_rot: true
     use_color_jitter: true  # 新增颜色抖动增强
@@ -31,7 +31,8 @@ datasets:
     num_worker_per_gpu: 8 #4
     batch_size_per_gpu: 16  #8 #6 #4
     dataset_enlarge_ratio: 1
-    prefetch_mode: ~
+    prefetch_mode: 'cuda' #~
+    pin_memory: true
 
 
   val:

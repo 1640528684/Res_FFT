@@ -48,6 +48,8 @@ class PairedImageDataset(data.Dataset):
     def __init__(self, opt):
         super(PairedImageDataset, self).__init__()
         self.opt = opt
+        # 初始化缓存字典，用于存储预处理后的结果
+        self.cache = {}  # 键: 索引index，值: 预处理后的字典(lq, gt, paths等)
         # file client (io backend)
         self.file_client = None
         self.io_backend_opt = opt['io_backend']
@@ -76,6 +78,10 @@ class PairedImageDataset(data.Dataset):
                 self.filename_tmpl)
 
     def __getitem__(self, index):
+        # 检查缓存：如果当前索引已缓存，直接返回缓存结果
+        if index in self.cache:
+            return self.cache[index]
+        
         if self.file_client is None:
             self.file_client = FileClient(
                 self.io_backend_opt.pop('type'), **self.io_backend_opt)
@@ -124,12 +130,15 @@ class PairedImageDataset(data.Dataset):
             normalize(img_lq, self.mean, self.std, inplace=True)
             normalize(img_gt, self.mean, self.std, inplace=True)
 
-        return {
+        result = {
             'lq': img_lq,
             'gt': img_gt,
             'lq_path': lq_path,
             'gt_path': gt_path
         }
+        
+        self.cache[index] = result  # 缓存预处理结果
+        return result
 
     def __len__(self):
         return len(self.paths)
