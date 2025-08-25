@@ -454,7 +454,7 @@ if __name__ == '__main__':
     # middle_blk_num = 12
     # dec_blks = [2, 2, 2, 2]
 
-    enc_blks = [1, 1, 1, 28]
+    enc_blks = [1, 1, 1, 16] #enc_blks = [1, 1, 1, 28]
     middle_blk_num = 1
     dec_blks = [1, 1, 1, 1]
 
