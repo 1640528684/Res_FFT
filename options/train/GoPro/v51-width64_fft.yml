@@ -81,8 +81,8 @@ train:
 
   # losses
   pixel_opt:
-    type: PSNRLoss
-    loss_weight: 0.7
+    type: 'L1Loss' #PSNRLoss
+    loss_weight: 1.0 #0.7
     reduction: mean
 
   fft_opt:  # 新增FFT频域损失

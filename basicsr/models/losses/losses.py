@@ -89,7 +89,7 @@ class MSELoss(nn.Module):
 
 class PSNRLoss(nn.Module):
 
-    def __init__(self, loss_weight=1.0, reduction='mean', toY=False):
+    def __init__(self, loss_weight=1.0, reduction='mean', toY=False,max_val=1.0):
         super(PSNRLoss, self).__init__()
         assert reduction == 'mean'
         self.loss_weight = loss_weight
@@ -97,6 +97,7 @@ class PSNRLoss(nn.Module):
         self.toY = toY
         self.coef = torch.tensor([65.481, 128.553, 24.966]).reshape(1, 3, 1, 1)
         self.first = True
+        self.max_val = max_val  # 像素最大值（如归一化后为1.0）
 
     def forward(self, pred, target):
         assert len(pred.size()) == 4
@@ -109,10 +110,18 @@ class PSNRLoss(nn.Module):
             target = (target * self.coef).sum(dim=1).unsqueeze(dim=1) + 16.
 
             pred, target = pred / 255., target / 255.
-            pass
-        assert len(pred.size()) == 4
+        #     pass
+        # assert len(pred.size()) == 4
 
-        return self.loss_weight * self.scale * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+        # return self.loss_weight * self.scale * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+        # 计算MSE
+        mse = F.mse_loss(pred, target, reduction='none').mean(dim=(1, 2, 3))
+        # 防止MSE为0导致log出错，添加极小值
+        mse = torch.clamp(mse, min=1e-8)
+        # 正确PSNR公式：10*log10(max_val² / mse)，取负作为损失（最小化损失即最大化PSNR）
+        psnr = self.scale * torch.log((self.max_val **2) / mse)
+        # 返回负PSNR作为损失（确保损失为正值，便于优化）
+        return self.loss_weight * (-psnr).mean()
 
 class FFTLoss(nn.Module):
     """L1 loss in frequency domain with FFT.

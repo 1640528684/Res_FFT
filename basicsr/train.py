@@ -121,14 +121,14 @@ def init_loggers(opt):
     logger.info(dict2str(opt))
 
     # initialize wandb logger before tensorboard logger to allow proper sync:
-    if (opt['logger'].get('wandb')
-            is not None) and (opt['logger']['wandb'].get('project')
-                              is not None) and ('debug' not in opt['name']):
-        assert opt['logger'].get('use_tb_logger') is True, (
-            'should turn on tensorboard when using wandb')
-        init_wandb_logger(opt)
+    # if (opt['logger'].get('wandb')
+    #         is not None) and (opt['logger']['wandb'].get('project')
+    #                           is not None) and ('debug' not in opt['name']):
+    #     assert opt['logger'].get('use_tb_logger') is True, (
+    #         'should turn on tensorboard when using wandb')
+    #     init_wandb_logger(opt)
         # 将配置文件参数上传到WandB
-        wandb.config.update(opt)
+        # wandb.config.update(opt)
     tb_logger = None
     if opt['logger'].get('use_tb_logger') and 'debug' not in opt['name']:
         # tb_logger = init_tb_logger(log_dir=f'./logs/{opt['name']}') #mkdir logs @CLY
@@ -300,7 +300,7 @@ def main():
                 # print('msg logger .. ', current_iter)
                 msg_logger(log_vars)
                  # 手动将训练指标同步到WandB（确保实时性）
-                wandb.log({k: v for k, v in log_vars.items() if k not in ['epoch', 'iter', 'total_iter']}, step=current_iter)
+                #wandb.log({k: v for k, v in log_vars.items() if k not in ['epoch', 'iter', 'total_iter']}, step=current_iter)
             # 保存最好的loss
             # if model.log_dict['l_pix'] < best_psnr:
             #     psnr = model.log_dict['l_pix']
@@ -320,13 +320,13 @@ def main():
                 val_metrics = model.validation(val_loader, current_iter, tb_logger,
                                  opt['val']['save_img'], rgb2bgr, use_image )
                 # 将验证指标同步到WandB
-                if val_metrics:
-                    wandb.log({f'val_{k}': v for k, v in val_metrics.items()}, step=current_iter)
-                    # 记录最佳PSNR
-                    if val_metrics.get('psnr', -float('inf')) > best_psnr:
-                        best_psnr = val_metrics['psnr']
-                        wandb.log({'best_val_psnr': best_psnr}, step=current_iter)
-                        logger.info(f'Update best PSNR: {best_psnr:.4f} at iter {current_iter}')
+                # if val_metrics:
+                #     wandb.log({f'val_{k}': v for k, v in val_metrics.items()}, step=current_iter)
+                #     # 记录最佳PSNR
+                #     if val_metrics.get('psnr', -float('inf')) > best_psnr:
+                #         best_psnr = val_metrics['psnr']
+                #         wandb.log({'best_val_psnr': best_psnr}, step=current_iter)
+                #         logger.info(f'Update best PSNR: {best_psnr:.4f} at iter {current_iter}')
                 log_vars = {'epoch': epoch, 'iter': current_iter, 'total_iter': total_iters}
                 log_vars.update({'lrs': model.get_current_learning_rate()})
                 log_vars.update(model.get_current_log())
@@ -358,8 +358,8 @@ def main():
     if tb_logger:
         tb_logger.close()
      # 结束WandB运行
-    if opt['rank'] == 0 and wandb.run is not None:
-        wandb.finish()
+    # if opt['rank'] == 0 and wandb.run is not None:
+    #     wandb.finish()
 
 
 if __name__ == '__main__':
