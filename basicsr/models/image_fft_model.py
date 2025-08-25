@@ -240,8 +240,8 @@ class ImageFftModel(BaseModel):
             loss_dict['l_fft'] = l_fft
         
         # Perceptual loss
-        if self.cri_percep:
-            l_percep = self.cri_percep(preds[-1], self.gt)
+        if self.cri_perceptual:
+            l_percep = self.cri_perceptual(preds[-1], self.gt)
             l_total += l_percep
             loss_dict['l_percep'] = l_percep
         
