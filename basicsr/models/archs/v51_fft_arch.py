@@ -112,12 +112,9 @@ class FFTBlock(nn.Module):
         
         # 通过1x1卷积处理频域特征（保持float32）
         x_fft_processed = self.conv_fft(x_fft_stack)  # [B, 2*mid_C, H, W//2+1]
-        mid_C = x_fft_processed.shape[1] // 2
-        x_fft_real_processed = x_fft_processed[:, :mid_C, ...]
-        x_fft_imag_processed = x_fft_processed[:, mid_C:, ...]
         
         # 合并实部和虚部，重建复数张量（float32）
-        x_fft_processed = torch.complex(x_fft_real_processed, x_fft_imag_processed)
+        x_fft_processed = torch.complex(x_fft_processed, torch.zeros_like(x_fft_processed))
         # 执行逆FFT（float32支持）
         x_ifft = torch.fft.irfft2(x_fft_processed, s=(H, W), norm=norm)  # [B, mid_C, H, W]
         # 将结果转换回原始数据类型（如float16），保证与网络其他部分精度一致
