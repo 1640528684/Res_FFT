@@ -160,23 +160,6 @@ class ImageFftModel(BaseModel):
                 idxes.append({'i': i, 'j': j})
                 j = j + step_j
             i = i + step_i
-        
-        # i = 0
-        # while i < h:
-        #     j = 0
-        #     if i + crop_size_h >= h:
-        #         i = h - crop_size_h
-
-        #     last_j = False
-        #     while j < w:
-        #         if j + crop_size_w >= w:
-        #             j = w - crop_size_w
-        #             last_j = True
-
-        #         parts.append(self.lq[:, :, i//self.scale:(i + crop_size_h)//self.scale, j//self.scale:(j + crop_size_w)//self.scale])
-        #         idxes.append({'i': i, 'j': j})
-        #         j += step_j
-        #     i += step_i
 
 
         self.origin_lq = self.lq
