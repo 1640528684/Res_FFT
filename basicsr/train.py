@@ -37,7 +37,7 @@ print(f"项目根目录路径: {root_dir}")
 print(f"Python搜索路径: {sys.path[:3]}")  # 打印前3个路径确认
 
 
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:128'
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:64'
 
 import torch
 import torch.distributed as dist

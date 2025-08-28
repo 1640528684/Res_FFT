@@ -280,6 +280,9 @@ class ImageFftModel(BaseModel):
         scaler.update()
 
         self.log_dict = self.reduce_loss_dict(loss_dict)
+        
+        # 清理未使用的CUDA缓存
+        torch.cuda.empty_cache()
 
     def test(self):
         self.net_g.eval()
